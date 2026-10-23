@@ -86,7 +86,7 @@ function makePlans(a,target,options={}){
  if(Math.abs(duration-target)<.03){add([{start,end,track:0}],'保留完整原曲',0,'original');return candidates;}
  const minHead=Math.min(bar, target*.22),minTail=Math.min(bar,target*.25),points=[...new Set([...a.bars,...a.sections.slice(1).map(s=>a.beats.reduce((best,b)=>Math.abs(b-s.start)<Math.abs(best-s.start)?b:best,a.beats[0]||s.start))])].filter(t=>t>start+minHead&&t<end-minTail).sort((x,y)=>x-y);
  if(target<duration){
-  if(target<=duration*.55){const tailStarts=[...new Set([...a.bars,...a.sections.map(s=>s.start)])].filter(t=>t>start+bar*.75&&Math.abs(end-t-target)<=.85).sort((x,y)=>Math.abs(end-x-target)-Math.abs(end-y-target));for(const at of tailStarts.slice(0,2))add([{start:at,end,track:0}],'连续尾段 · 无拼接',.8,'continuous-tail');}
+  if(options.allowExcerpt&&target<=duration*.55){const tailStarts=[...new Set([...a.bars,...a.sections.map(s=>s.start)])].filter(t=>t>start+bar*.75&&Math.abs(end-t-target)<=.85).sort((x,y)=>Math.abs(end-x-target)-Math.abs(end-y-target));for(const at of tailStarts.slice(0,2))add([{start:at,end,track:0}],'连续尾段节选 · 非完整重组',.8,'continuous-tail');}
   const remove=duration-target,tolerance=Math.max(bar*1.1,target*.045),cuts=[];for(let i=0;i<lyrics.length;i++)for(let j=i+1;j<lyrics.length;j++){const clean=s=>s.toLowerCase().replace(/[\s\p{P}]/gu,'');if(clean(lyrics[i].text).length<3||clean(lyrics[i].text)!==clean(lyrics[j].text))continue;const from=lyrics[i].start,to=lyrics[j].start;if(from>start+minHead&&to<end-minTail&&Math.abs(to-from-remove)<=tolerance)add(buildPieces(start,end,[{from,to}]),'重复歌词跳接 · 同句接同句',seamCost(a,from,to,[])-.15,'lyric-repeat');}
   for(let i=0;i<points.length;i++)for(let j=i+1;j<points.length;j++){const from=points[i],to=points[j],removed=to-from;if(removed>remove+tolerance)break;const cost=seamCost(a,from,to,lyrics);cuts.push({from,to,removed,cost});if(Math.abs(removed-remove)<=tolerance)add(buildPieces(start,end,[{from,to}]),'一处衔接 · 保留起收',cost,'shorten');}
   // Two separated skips offer an alternative to deleting one long passage.
@@ -133,9 +133,10 @@ function assessPlans(a,plans,source,rate,options={}){
  const reference=natural[Math.floor(natural.length*.85)]||.2,limit=Math.max(.34,reference*1.45+.08),safeLimit=Math.min(limit,Math.max(.45,reference*1.05)),fade=options.crossfade>0?clamp(options.crossfade,.005,.5):.025;
  const level=t=>{const first=Math.max(0,Math.round(t*rate)),last=Math.min(source.length,first+Math.round(rate*.5));let sum=0,count=0;for(let i=first;i<last;i+=8){sum+=source[i]*source[i];count++;}return Math.sqrt(sum/Math.max(1,count));};
  return plans.map(plan=>{
-  const joins=[];for(let i=1;i<plan.pieces.length;i++){const from=plan.pieces[i-1].end,to=plan.pieces[i].start,change=boundaryCost(a,from,to),groove=grooveSimilarity(a,from,to),fadeLevel=fadeRetention(source,rate,from,to,fade),left=level(from-.6),right=level(to+.1),levelDb=20*Math.log10((right+1e-5)/(left+1e-5));joins.push({from,to,change,groove,fadeLevel,levelDb,passed:change<=safeLimit&&groove>=.9&&fadeLevel>=.55&&Math.abs(levelDb)<=3});}
+  const sectionBounds=[...new Set(a.sections.flatMap(s=>[s.start,s.end]))],sectionDistance=t=>Math.min(...sectionBounds.map(b=>Math.abs(t-b))),sectionTolerance=Math.min(.45,60/a.bpm*a.meter*.13);
+  const joins=[];for(let i=1;i<plan.pieces.length;i++){const from=plan.pieces[i-1].end,to=plan.pieces[i].start,change=boundaryCost(a,from,to),groove=grooveSimilarity(a,from,to),fadeLevel=fadeRetention(source,rate,from,to,fade),left=level(from-.6),right=level(to+.1),levelDb=20*Math.log10((right+1e-5)/(left+1e-5)),atSections=sectionDistance(from)<=sectionTolerance&&sectionDistance(to)<=sectionTolerance,samePhrase=a.beatConfidence>=.55&&groove>=.985&&change<=safeLimit*.6,structural=atSections||samePhrase;joins.push({from,to,change,groove,fadeLevel,levelDb,structural,atSections,samePhrase,passed:change<=safeLimit&&groove>=.9&&fadeLevel>=.55&&Math.abs(levelDb)<=3&&structural});}
   const passed=joins.every(j=>j.passed),penalty=joins.reduce((sum,j)=>sum+j.change/limit*.4+(1-j.groove)*.4+Math.max(0,1-j.fadeLevel)*.7,0);
-  return {...plan,quality:{passed,joins,limit:safeLimit,score:plan.cost+penalty},risk:plan.seams===0?'无内部拼接 · 请听开头是否自然':passed?'接缝指标通过 · 仍需试听':'接缝检查未通过'};
+  return {...plan,quality:{passed,joins,limit:safeLimit,score:plan.cost+penalty},risk:plan.kind==='continuous-tail'?'仅保留尾段，不代表整首歌的结构':passed?'段落与接缝初筛通过 · 仍需试听':'段落边界或接缝检查未通过'};
  }).sort((x,y)=>x.quality.score-y.quality.score);
 }
 // Waveform-similarity overlap-add. All channels share alignment; pitch is preserved.
@@ -217,3 +218,4 @@ function remapLyrics(lyrics,plan){const result=[];let offset=0;const natural=pla
 const api={analyze,makePlans,mixPlans,assessPlans,render,stretch,wav,remapLyrics,planDuration,seamCost};
 if(typeof module!=='undefined'&&module.exports)module.exports=api;else root.WaveCutEngine=api;
 })(typeof self!=='undefined'?self:globalThis);
+
