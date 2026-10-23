@@ -1,3 +1,3 @@
-importScripts('./engine.js?v=20261023-continuous');
+importScripts('./engine.js?v=20261023-continuous2');
 self.onmessage=e=>{const {id,command}=e.data;try{let result;if(command==='analyze')result=WaveCutEngine.analyze(e.data.samples,e.data.rate,e.data.options,p=>self.postMessage({id,type:'progress',...p}));else if(command==='render')result=WaveCutEngine.render(e.data.sources,e.data.rate,e.data.plan,e.data.options);else if(command==='plans')result=WaveCutEngine.makePlans(e.data.analysis,e.data.target,e.data.options);else if(command==='quality')result=WaveCutEngine.assessPlans(e.data.analysis,e.data.plans,e.data.samples,e.data.rate,e.data.options);else if(command==='mix')result=WaveCutEngine.mixPlans(e.data.a,e.data.b,e.data.target,e.data.options);else throw new Error('Unknown worker command');self.postMessage({id,type:'result',result},result?.channels?result.channels.map(c=>c.buffer):[]);}catch(error){self.postMessage({id,type:'error',message:error.message});}};
 
