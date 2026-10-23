@@ -1,7 +1,7 @@
 <!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#101315"><title>WaveCut · 音乐时长重组</title><link rel="stylesheet" href="style.css"></head><body>
 <header><a class="logo" href="./">≋ <b>WaveCut</b></a><span class="version">音乐时长重组 · 开发预览</span><div class="header-actions"><button id="projects">本机工程</button><button id="settings">AI 设置</button></div></header>
 <main>
-<section class="hero"><div><span class="eyebrow">让音乐配合你的时长</span><h1>一首歌，剪成你需要的长度。</h1><p>上传整首音乐，输入目标秒数。分析全曲、重组乐段，再把原曲的结尾接回来。</p></div><label class="button primary">＋ 导入音乐 A<input id="fileA" type="file" accept="audio/*,.wav,.mp3,.m4a,.flac,.aac,.ogg"></label></section>
+<section class="hero"><div><span class="eyebrow">让音乐配合你的时长</span><h1>一首歌，剪成你需要的长度。</h1><p>上传整首音乐，输入目标秒数。分析全曲、重组乐段，再把原曲的结尾接回来。</p></div><label class="button primary">＋ 导入音乐<input id="fileA" type="file" accept="audio/*,.wav,.mp3,.m4a,.flac,.aac,.ogg"></label></section>
 <section id="drop" class="drop"><div class="drop-symbol">≋</div><h2>把整首音乐拖到这里</h2><p>MP3 / WAV / FLAC / M4A 等浏览器可解码格式 · 最大 100 MB / 10 分钟</p><button id="demo">先用演示曲试试 →</button></section>
 <div id="status" role="status" aria-live="polite">导入音乐后，填写目标时长即可生成剪法。</div><div id="progressWrap" hidden><progress id="progress" max="100" value="0"></progress><button id="cancel">取消处理</button></div>
 <section id="workspace" hidden>
