@@ -20,7 +20,7 @@
 </main>
 <dialog id="settingsDialog"><form method="dialog"><button class="close" aria-label="关闭设置">×</button></form><h2>AI 方案建议</h2><p>填写兼容 Chat Completions 的服务。点击“AI 帮我比较方案”才会发送分析摘要和歌词，音频不发送。费用由你的服务商收取。</p><label>接口基地址<input id="apiBase" type="url" placeholder="https://你的服务地址/v1"></label><label>模型名<input id="apiModel" type="text" placeholder="填写服务商提供的模型名称"></label><label>API 密钥<input id="apiKey" type="password" autocomplete="off" placeholder="仅当前页面内存保存，刷新后清除"></label><button id="saveSettings" class="primary">应用设置</button></dialog>
 <dialog id="projectsDialog"><form method="dialog"><button class="close" aria-label="关闭工程列表">×</button></form><h2>本机工程</h2><p>保存分析和剪法，不保存音频。跨电脑可导出工程文件，再重新选择原曲。</p><label class="button">导入工程文件<input id="projectFile" type="file" accept=".json,.wavecut"></label><div id="projectList"></div></dialog>
-<script src="engine.js"></script><script src="app.js"></script></body></html>
+<script src="engine.js?v=20261023-rhythm"></script><script src="app.js?v=20261023-rhythm"></script></body></html>
 
 
 
