@@ -2,4 +2,3 @@ import { pipeline, env } from 'https://cdn.jsdelivr.net/npm/@huggingface/transfo
 env.allowLocalModels=false;
 env.backends.onnx.wasm.numThreads=1;
 self.onmessage=async e=>{try{const pipe=await pipeline('automatic-speech-recognition','Xenova/whisper-tiny',{device:'wasm',dtype:'q8',progress_callback:p=>self.postMessage({type:'progress',message:p.status==='progress'?`下载歌词模型 ${Math.round(p.progress||0)}%`:'准备歌词识别模型…',progress:p.progress||0})});self.postMessage({type:'progress',message:'模型已就绪，正在本机识别歌词…'});const options={return_timestamps:true,chunk_length_s:30,stride_length_s:5,task:'transcribe'};if(e.data.language!=='auto')options.language=e.data.language;const result=await pipe(e.data.samples,options);self.postMessage({type:'result',result});}catch(error){self.postMessage({type:'error',message:error.message});}};
-

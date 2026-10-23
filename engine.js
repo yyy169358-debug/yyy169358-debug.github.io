@@ -81,8 +81,8 @@ function planDuration(pieces){return pieces.reduce((s,p)=>s+(p.end-p.start)/(p.r
 function makePlans(a,target,options={}){
  if(!Number.isFinite(target)||target<5||target>1200)throw new Error('目标时长请输入 5–1200 秒。');
  const start=a.activeStart,end=a.activeEnd,duration=end-start,bar=60/a.bpm*a.meter,lyrics=options.lyrics||[];
- const strict=options.exact!==false,candidates=[];
- function add(pieces,name,cost,kind){const natural=planDuration(pieces),ratio=target/natural;if(strict&&(ratio<.94||ratio>1.06))return;const seams=pieces.length-1;const retainedChorus=a.sections.filter(s=>/副歌/.test(s.label)).filter(s=>pieces.some(p=>p.end>=s.end&&p.start<=s.start)).length;const headShare=(pieces[0].end-pieces[0].start)/Math.max(1,natural);const structurePenalty=pieces.slice(0,-1).reduce((sum,p)=>sum+Math.min(1,Math.min(...a.sections.flatMap(s=>[Math.abs(s.start-p.end),Math.abs(s.end-p.end)]))/Math.max(1,bar))*.2,0);const score=cost+Math.abs(natural-target)/Math.max(1,target)*8+seams*.1-retainedChorus*.12+Math.abs(headShare-.4)*.45+structurePenalty;const signature=pieces.map(p=>[p.start.toFixed(2),p.end.toFixed(2)].join(':')).join('|');if(candidates.some(p=>p.signature===signature))return;candidates.push({id:'p'+candidates.length,name,kind,pieces,naturalDuration:natural,duration:strict?target:natural,stretch:strict?ratio:1,seams,cost:score,signature,retainedChorus,endingPreserved:true,lyricProtected:lyrics.length>0});}
+ const strict=options.exact===true,candidates=[];
+ function add(pieces,name,cost,kind){const natural=planDuration(pieces),ratio=target/natural;if(strict&&(ratio<.94||ratio>1.06))return;if(!strict&&Math.abs(natural-target)>.85)return;const seams=pieces.length-1;const retainedChorus=a.sections.filter(s=>/副歌/.test(s.label)).filter(s=>pieces.some(p=>p.end>=s.end&&p.start<=s.start)).length;const headShare=(pieces[0].end-pieces[0].start)/Math.max(1,natural);const boundaries=a.sections.flatMap(s=>[s.start,s.end]);const distance=t=>Math.min(...boundaries.map(b=>Math.abs(b-t)));const structurePenalty=pieces.slice(1).reduce((sum,p,i)=>sum+Math.min(1,distance(pieces[i].end)/Math.max(.25,bar*.25))*.7+Math.min(1,distance(p.start)/Math.max(.25,bar*.25))*.7,0);const score=cost+Math.abs(natural-target)/Math.max(1,target)*8+seams*.1-retainedChorus*.12+Math.abs(headShare-.4)*.45+structurePenalty;const signature=pieces.map(p=>[p.start.toFixed(2),p.end.toFixed(2)].join(':')).join('|');if(candidates.some(p=>p.signature===signature))return;candidates.push({id:'p'+candidates.length,name,kind,pieces,naturalDuration:natural,duration:strict?target:natural,stretch:strict?ratio:1,seams,cost:score,signature,retainedChorus,endingPreserved:true,lyricProtected:lyrics.length>0});}
  if(Math.abs(duration-target)<.03){add([{start,end,track:0}],'保留完整原曲',0,'original');return candidates;}
  const minHead=Math.min(bar, target*.22),minTail=Math.min(bar,target*.25),points=[...new Set([...a.bars,...a.sections.slice(1).map(s=>a.beats.reduce((best,b)=>Math.abs(b-s.start)<Math.abs(best-s.start)?b:best,a.beats[0]||s.start))])].filter(t=>t>start+minHead&&t<end-minTail).sort((x,y)=>x-y);
  if(target<duration){
@@ -129,9 +129,10 @@ function fadeRetention(source,rate,from,to,fade){
 }
 function assessPlans(a,plans,source,rate,options={}){
  const natural=a.bars.filter(t=>t>a.activeStart+.6&&t<a.activeEnd-.6).map(t=>boundaryCost(a,t,t)).sort((x,y)=>x-y);
- const reference=natural[Math.floor(natural.length*.85)]||.2,limit=Math.max(.34,reference*1.45+.08),fade=clamp(options.crossfade||.07,.005,.5);
+ const reference=natural[Math.floor(natural.length*.85)]||.2,limit=Math.max(.34,reference*1.45+.08),fade=options.crossfade>0?clamp(options.crossfade,.005,.5):.025;
+ const level=t=>{const first=Math.max(0,Math.round(t*rate)),last=Math.min(source.length,first+Math.round(rate*.5));let sum=0,count=0;for(let i=first;i<last;i+=8){sum+=source[i]*source[i];count++;}return Math.sqrt(sum/Math.max(1,count));};
  return plans.map(plan=>{
-  const joins=[];for(let i=1;i<plan.pieces.length;i++){const from=plan.pieces[i-1].end,to=plan.pieces[i].start,change=boundaryCost(a,from,to),groove=grooveSimilarity(a,from,to),fadeLevel=fadeRetention(source,rate,from,to,fade);joins.push({from,to,change,groove,fadeLevel,passed:change<=limit&&groove>=.65&&fadeLevel>=.42});}
+  const joins=[];for(let i=1;i<plan.pieces.length;i++){const from=plan.pieces[i-1].end,to=plan.pieces[i].start,change=boundaryCost(a,from,to),groove=grooveSimilarity(a,from,to),fadeLevel=fadeRetention(source,rate,from,to,fade),left=level(from-.6),right=level(to+.1),levelDb=20*Math.log10((right+1e-5)/(left+1e-5));joins.push({from,to,change,groove,fadeLevel,levelDb,passed:change<=limit&&groove>=.65&&fadeLevel>=.42&&Math.abs(levelDb)<=4});}
   const passed=joins.every(j=>j.passed),penalty=joins.reduce((sum,j)=>sum+j.change/limit*.4+(1-j.groove)*.4+Math.max(0,1-j.fadeLevel)*.7,0);
   return {...plan,quality:{passed,joins,limit,score:plan.cost+penalty},risk:passed?'接缝自动检查通过 · 仍建议试听':'接缝检查未通过'};
  }).sort((x,y)=>x.quality.score-y.quality.score);
@@ -163,14 +164,32 @@ function stretchKeepingEdges(channels,rate,targetFrames){
  return channels.map((c,ch)=>{const out=new Float32Array(targetFrames);out.set(c.subarray(0,head),0);out.set(middle[ch],head);out.set(c.subarray(inputLength-tail),head+targetMiddle);return out;});
 }
 function render(sources,rate,plan,options={}){
- const channels=Math.max(...sources.map(s=>s.length)),pieces=plan.pieces;const chunks=[];
+ const channels=Math.max(...sources.map(s=>s.length)),pieces=plan.pieces,chunks=[];
  for(const piece of pieces){const source=sources[piece.track||0],a=Math.round(piece.start*rate),b=Math.round(piece.end*rate);let segment=Array.from({length:channels},(_,ch)=>source[Math.min(ch,source.length-1)].slice(a,b));if(piece.rate&&Math.abs(piece.rate-1)>.0001)segment=stretch(segment,rate,Math.round(segment[0].length/piece.rate));chunks.push(segment);}
- const length=chunks.reduce((s,c)=>s+c[0].length,0),out=Array.from({length:channels},()=>new Float32Array(length));let offset=0;const joins=[];
- chunks.forEach((chunk,index)=>{for(let ch=0;ch<channels;ch++)out[ch].set(chunk[ch],offset);if(index){const p=pieces[index],src=sources[p.track||0],pre=Math.round(p.start*rate),cross=Math.min(Math.round(rate*(plan.crossfade||options.crossfade||.035)),pre,offset,Math.floor(chunk[0].length/3));joins.push(offset/rate);for(let k=0;k<cross;k++){const t=(k+1)/(cross+1);for(let ch=0;ch<channels;ch++){const prev=out[ch][offset-cross+k],next=src[Math.min(ch,src.length-1)][pre-cross+k]||0;out[ch][offset-cross+k]=prev*(1-t)+next*t;}}}offset+=chunk[0].length;});
+ const length=chunks.reduce((s,c)=>s+c[0].length,0),out=Array.from({length:channels},()=>new Float32Array(length));
+ const rms=(data,start,end)=>{let power=0,count=0;for(const channel of data)for(let i=Math.max(0,start);i<Math.min(channel.length,end);i+=8){power+=channel[i]*channel[i];count++;}return Math.sqrt(power/Math.max(1,count));};
+ const beat=60/(options.bpm||plan.bpm||120);let offset=0;const joins=[],transitions=[];
+ chunks.forEach((chunk,index)=>{
+  if(index){
+   const piece=pieces[index],src=sources[piece.track||0],pre=Math.round(piece.start*rate);
+   const oldLevel=rms(out,offset-Math.round(rate*.7),offset-Math.round(rate*.1)),newLevel=rms(chunk,Math.round(rate*.1),Math.round(rate*.7));
+   const match=oldLevel>.0003&&newLevel>.0003?clamp(oldLevel/newLevel,.8,1.25):1;
+   const fade=options.crossfade>0?clamp(options.crossfade,.005,.5):.025;
+   const cross=Math.min(Math.round(rate*fade),pre,offset,Math.floor(chunk[0].length/3));
+   const release=Math.min(chunk[0].length,Math.round(rate*Math.max(1.2,beat*4)));
+   for(const c of chunk)for(let i=0;i<release;i++){const ease=.5+.5*Math.cos(Math.PI*i/release);c[i]*=1+(match-1)*ease;}
+   let xy=0,xx=0,yy=0;for(let ch=0;ch<channels;ch++){const incoming=src[Math.min(ch,src.length-1)];for(let k=0;k<cross;k+=8){const x=out[ch][offset-cross+k],y=(incoming[pre-cross+k]||0)*match;xy+=x*y;xx+=x*x;yy+=y*y;}}
+   const correlation=clamp(xy/Math.sqrt(xx*yy+1e-12),0,.95);
+   for(let k=0;k<cross;k++){const t=(k+1)/(cross+1),oldWeight=Math.cos(Math.PI*t/2),newWeight=Math.sin(Math.PI*t/2),normalizer=Math.sqrt(oldWeight*oldWeight+newWeight*newWeight+2*correlation*oldWeight*newWeight);for(let ch=0;ch<channels;ch++){const prev=out[ch][offset-cross+k],incoming=src[Math.min(ch,src.length-1)][pre-cross+k]||0;out[ch][offset-cross+k]=(prev*oldWeight+incoming*match*newWeight)/normalizer;}}
+   joins.push(offset/rate);transitions.push({time:offset/rate,fadeSeconds:cross/rate,levelGainDb:20*Math.log10(match),correlation});
+  }
+  for(let ch=0;ch<channels;ch++)out[ch].set(chunk[ch],offset);
+  offset+=chunk[0].length;
+ });
  const frames=Math.round(plan.duration*rate),result=stretchKeepingEdges(out,rate,frames);let peak=0;for(const c of result)for(const x of c)peak=Math.max(peak,Math.abs(x));const gain=options.normalize&&peak>0?Math.pow(10,-1/20)/peak:peak>1?1/peak:1;
  for(const c of result)for(let i=0;i<c.length;i++){let envelope=1;const edge=Math.round(rate*.008);if(i<edge)envelope=i/edge;if(i>=c.length-edge)envelope=Math.min(envelope,(c.length-1-i)/edge);c[i]*=gain*envelope;}
  const mappedJoins=joins.map(t=>t*frames/length);
- return {channels:result,sampleRate:rate,duration:frames/rate,joins:mappedJoins,renderCheck:inspectRendered(result,rate,mappedJoins)};
+ return {channels:result,sampleRate:rate,duration:frames/rate,joins:mappedJoins,transitions,renderCheck:inspectRendered(result,rate,mappedJoins)};
 }
 function inspectRendered(channels,rate,joins){
  const issues=[];let peak=0;
@@ -184,4 +203,3 @@ function remapLyrics(lyrics,plan){const result=[];let offset=0;const natural=pla
 const api={analyze,makePlans,mixPlans,assessPlans,render,stretch,wav,remapLyrics,planDuration,seamCost};
 if(typeof module!=='undefined'&&module.exports)module.exports=api;else root.WaveCutEngine=api;
 })(typeof self!=='undefined'?self:globalThis);
-
