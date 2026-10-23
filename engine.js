@@ -189,14 +189,26 @@ function render(sources,rate,plan,options={}){
  const frames=Math.round(plan.duration*rate),result=stretchKeepingEdges(out,rate,frames);let peak=0;for(const c of result)for(const x of c)peak=Math.max(peak,Math.abs(x));const gain=options.normalize&&peak>0?Math.pow(10,-1/20)/peak:peak>1?1/peak:1;
  for(const c of result)for(let i=0;i<c.length;i++){let envelope=1;const edge=Math.round(rate*.008);if(i<edge)envelope=i/edge;if(i>=c.length-edge)envelope=Math.min(envelope,(c.length-1-i)/edge);c[i]*=gain*envelope;}
  const mappedJoins=joins.map(t=>t*frames/length);
- return {channels:result,sampleRate:rate,duration:frames/rate,joins:mappedJoins,transitions,renderCheck:inspectRendered(result,rate,mappedJoins)};
+ return {channels:result,sampleRate:rate,duration:frames/rate,joins:mappedJoins,transitions,renderCheck:inspectRendered(result,rate,mappedJoins,options.bpm||120)};
 }
-function inspectRendered(channels,rate,joins){
+function renderedBeatContinuity(channels,rate,join,bpm){
+ const beat=60/bpm,stride=Math.max(1,Math.round(rate/11025)),sampleRate=rate/stride,size=1024,hop=256,start=Math.max(0,join-beat*3.8),end=Math.min(channels[0].length/rate,join+beat*3.8),frames=Math.max(0,Math.floor(((end-start)*sampleRate-size)/hop));
+ if(frames<16)return {checked:false};
+ const flux=new Float32Array(frames),previous=new Float32Array(size/2),real=new Float64Array(size),imag=new Float64Array(size),window=Float64Array.from({length:size},(_,i)=>.5-.5*Math.cos(2*Math.PI*i/(size-1)));
+ for(let f=0;f<frames;f++){const at=Math.round(start*rate)+f*hop*stride;for(let k=0;k<size;k++){let sample=0;for(const channel of channels)sample+=(channel[at+k*stride]||0)/channels.length;real[k]=sample*window[k];imag[k]=0;}fft(real,imag);let onset=0;for(let k=2;k<size/2;k++){const magnitude=Math.log1p(Math.hypot(real[k],imag[k]));onset+=Math.max(0,magnitude-previous[k]);previous[k]=magnitude;}flux[f]=onset;}
+ const onsetAt=t=>{const index=Math.round(((t-start)*sampleRate-size/2)/hop);let peak=0;for(let k=Math.max(0,index-1);k<=Math.min(frames-1,index+1);k++)peak=Math.max(peak,flux[k]);return peak;};
+ const side=sign=>{const scores=[];for(let p=-16;p<=16;p++){const shift=p*beat/64;let score=0;for(let k=1;k<=3;k++){const t=join+sign*k*beat+shift;if(t>start+.05&&t<end-.05)score+=onsetAt(t);}scores.push(score);}const peak=Math.max(...scores),average=mean(scores),index=scores.indexOf(peak);return {phase:(index-16)/64,confidence:peak/(average+1e-6)};};
+ const left=side(-1),right=side(1),drift=Math.abs(left.phase-right.phase);
+ return {checked:left.confidence>=1.3&&right.confidence>=1.3,driftBeats:drift,leftConfidence:left.confidence,rightConfidence:right.confidence,passed:drift<=.2};
+}
+function inspectRendered(channels,rate,joins,bpm){
  const issues=[];let peak=0;
  for(const channel of channels)for(const sample of channel){if(!Number.isFinite(sample)){issues.push('音频样本异常');break;}peak=Math.max(peak,Math.abs(sample));}
  if(peak>1.0001)issues.push('成品削波');
  for(const time of joins){const pos=Math.round(time*rate),span=Math.round(rate*.2),near=Math.round(rate*.004);for(const channel of channels){const context=[];let click=0;for(let i=Math.max(1,pos-span);i<Math.min(channel.length,pos+span);i+=2){const delta=Math.abs(channel[i]-channel[i-1]);if(Math.abs(i-pos)<=near)click=Math.max(click,delta);else context.push(delta);}context.sort((a,b)=>a-b);const typical=context[Math.floor(context.length*.99)]||0;if(click>Math.max(.08,typical*6)){issues.push('接缝出现瞬态杂音');break;}}}
- return {passed:issues.length===0,issues:[...new Set(issues)],peak};
+ const beatChecks=joins.map(t=>renderedBeatContinuity(channels,rate,t,bpm));
+ if(beatChecks.some(x=>x.checked&&!x.passed))issues.push('接缝前后节拍相位不一致');
+ return {passed:issues.length===0,issues:[...new Set(issues)],peak,beatChecks};
 }
 function wav(channels,sampleRate,markers=[]){const frames=channels[0].length,n=channels.length,cueSize=markers.length?12+24*markers.length:0,buffer=new ArrayBuffer(44+frames*n*2+cueSize),v=new DataView(buffer);const text=(o,s)=>{for(let i=0;i<s.length;i++)v.setUint8(o+i,s.charCodeAt(i));};text(0,'RIFF');v.setUint32(4,buffer.byteLength-8,true);text(8,'WAVEfmt ');v.setUint32(16,16,true);v.setUint16(20,1,true);v.setUint16(22,n,true);v.setUint32(24,sampleRate,true);v.setUint32(28,sampleRate*n*2,true);v.setUint16(32,n*2,true);v.setUint16(34,16,true);text(36,'data');v.setUint32(40,frames*n*2,true);let offset=44;for(let i=0;i<frames;i++)for(let ch=0;ch<n;ch++){const s=clamp(channels[ch][i],-1,1);v.setInt16(offset,Math.round(s*(s<0?32768:32767)),true);offset+=2;}if(markers.length){text(offset,'cue ');v.setUint32(offset+4,4+markers.length*24,true);v.setUint32(offset+8,markers.length,true);offset+=12;markers.forEach((t,i)=>{v.setUint32(offset,i+1,true);v.setUint32(offset+4,Math.round(t*sampleRate),true);text(offset+8,'data');v.setUint32(offset+20,Math.round(t*sampleRate),true);offset+=24;});}return buffer;}
 function remapLyrics(lyrics,plan){const result=[];let offset=0;const natural=planDuration(plan.pieces),scale=plan.duration/natural;for(const p of plan.pieces){for(const line of lyrics){const start=Math.max(p.start,line.start),end=Math.min(p.end,line.end);if(end>start)result.push({start:(offset+(start-p.start)/(p.rate||1))*scale,end:(offset+(end-p.start)/(p.rate||1))*scale,text:line.text});}offset+=(p.end-p.start)/(p.rate||1);}return result;}
