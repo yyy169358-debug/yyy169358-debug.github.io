@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#101916"><meta name="description" content="WaveCut 网页体验：在浏览器中剪辑、试听并导出音频。文件仅在本机处理。">
+<title>WaveCut · Web Experience</title><link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header><a class="brand" href="./" aria-label="WaveCut 首页"><span class="brand-icon">≋</span>WaveCut<span class="badge">WEB EXPERIENCE</span></a><span class="privacy"><i></i>音频仅在本机处理</span></header>
+<main>
+<section class="intro"><div><div class="eyebrow">声音里的好片段，留下来。</div><h1>让每一段声音，<br><em>恰到好处。</em></h1><p>导入音频，找到片段，试听并导出。<br>一个轻量、专注的浏览器剪辑台。</p></div><div class="intro-art" aria-hidden="true"><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span></div></section>
+<div class="workspace-title"><h2>音频工作台</h2><span>01 / 导入　02 / 选段　03 / 导出</span></div>
+<section class="studio" aria-label="音频剪辑工作台">
+<div class="editor">
+<div class="filebar"><div><span class="small-label">CURRENT AUDIO</span><h3 id="filename">从一段声音开始</h3><div id="filemeta" class="muted">支持浏览器可解码的 WAV、MP3、M4A 等格式</div></div><label class="button secondary file-button">导入音频<input id="file" type="file" accept="audio/*,.wav,.mp3,.m4a,.ogg,.flac,.aac" aria-label="导入音频"></label></div>
+<div id="dropzone" class="dropzone"><div class="upload-icon" aria-hidden="true">↥</div><h3>把音频拖到这里</h3><p>最大 100 MB，最长 10 分钟 · 文件不会上传</p><button id="demo" class="text-button">没有文件？试试演示音频 <span>↗</span></button></div>
+<div id="wavearea" hidden><div class="wave-top"><span>WAVEFORM</span><span id="duration">00:00.00</span></div><canvas id="wave" height="200" aria-label="音频波形，选段请使用下方起点和终点控件"></canvas><div class="timeline"><span>00:00</span><span id="middleTime"></span><span id="endTime"></span></div><label class="seek-label">播放位置 <output id="position">00:00.00</output><input id="seek" aria-label="播放位置" type="range" min="0" max="1" step="0.01" value="0"></label></div>
+<div class="transport"><div class="transport-buttons"><button id="play" class="primary" disabled>▶ 试听选段</button><button id="stop" class="secondary" disabled>■ 停止</button><label class="check"><input id="loop" type="checkbox">循环</label></div><span id="selectionSummary" class="muted">尚未导入音频</span></div>
+<div class="selection"><div><label for="start">起点 <span>秒</span></label><input id="start" type="number" min="0" max="1" step="0.01" value="0" disabled><input id="startRange" aria-label="选段起点" type="range" min="0" max="1" step="0.01" value="0" disabled></div><div><label for="end">终点 <span>秒</span></label><input id="end" type="number" min="0" max="1" step="0.01" value="0" disabled><input id="endRange" aria-label="选段终点" type="range" min="0" max="1" step="0.01" value="0" disabled></div></div>
+<div class="selection-footer"><span>拖动滑杆或输入秒数，精确选择片段。</span><button id="reset" class="text-button" disabled>恢复全选 ↺</button></div>
+</div>
+<aside><div class="aside-heading"><span class="small-label">FINISHING TOUCHES</span><h3>让片段更完整</h3></div><label class="effect"><span><strong>峰值归一化</strong><small>调整音量，让峰值接近 −1 dB</small></span><input id="normalize" type="checkbox"></label><label class="effect"><span><strong>淡入 / 淡出</strong><small>片段两端各最多 0.25 秒</small></span><input id="fade" type="checkbox" checked></label><div class="analysis-panel"><div class="panel-title">本地辅助分析 <span>规则分析</span></div><p>按音量阈值寻找首尾静音，供剪辑参考。</p><label class="threshold-label" for="threshold">静音阈值 <output id="thresholdValue">−40 dB</output></label><input id="threshold" type="range" min="-60" max="-20" step="1" value="-40"><button id="trim" class="secondary full" disabled>检测并选中非静音区间</button><p id="analysisResult" class="analysis-result">导入后可用。请试听确认边界。</p></div><div class="export-panel"><div><span class="small-label">READY WHEN YOU ARE</span><h3>留住这一段。</h3></div><button id="export" class="primary full" disabled>导出选段 WAV ↓</button><p>16-bit PCM · 保留解码后的采样率与声道<br>试听与导出使用相同处理设置</p></div></aside>
+</section>
+<div id="status" role="status" aria-live="polite">准备就绪。导入音频或先体验演示。</div>
+<section class="notes"><article><span>01</span><h3>本机处理</h3><p>解码、波形、试听和导出均在当前浏览器完成。关闭或刷新页面将清空当前音频。</p></article><article><span>02</span><h3>清楚的能力边界</h3><p>静音检测是基于音量阈值的启发式算法，可能截掉轻声或尾音。本页未运行 AI 模型，不提供语音识别、人声分离或生成式降噪。</p></article><article><span>03</span><h3>独立网页体验</h3><p>这是重新制作的轻量网页版。V10 Windows / macOS 桌面项目单独保留，本页不代表桌面版的全部功能。</p></article></section>
+</main><footer><span class="brand">≋ WaveCut</span><span>A LITTLE LESS NOISE. A LITTLE MORE YOU.</span><span>Web Experience · 本地音频剪辑</span></footer>
+<script src="app.js"></script>
+</body></html>
+
