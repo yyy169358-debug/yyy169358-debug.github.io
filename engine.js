@@ -52,7 +52,7 @@ function analyze(samples,rate,options={},progress=()=>{}){
  const global=norm(Array.from({length:12},(_,j)=>chroma.reduce((s,c)=>s+c[j],0)));
  const major=[6.35,2.23,3.48,2.33,4.38,4.09,2.52,5.19,2.39,3.66,2.29,2.88],minor=[6.33,2.68,3.52,5.38,2.6,3.53,2.54,4.75,3.98,2.69,3.34,3.17];let key='未知',keyScore=-1;const keys=['C','C♯','D','E♭','E','F','F♯','G','A♭','A','B♭','B'];for(let tonic=0;tonic<12;tonic++)for(const [profile,name]of[[major,'大调'],[minor,'小调']]){const score=dot(global,norm(profile.map((_,j)=>profile[(j-tonic+12)%12])));if(score>keyScore){keyScore=score;key=keys[tonic]+' '+name;}}
  progress({stage:'全曲分析完成',progress:100});
- return {version:2,method:'spectral-dsp',duration,activeStart,activeEnd,bpm:Math.round(bestTempo*10)/10,beatConfidence:clamp(bestScore,0,1),meter,meterEstimated:!options.meter,key,keyEstimated:true,beats,bars,sections,frames:{dt,rms:Array.from(rms),onsets:Array.from(novelty),chroma,timbre},maxRms};
+ return {version:3,method:'spectral-dsp',duration,activeStart,activeEnd,bpm:Math.round(bestTempo*10)/10,beatConfidence:clamp(bestScore,0,1),meter,meterEstimated:!options.meter,key,keyEstimated:true,beats,bars,sections,frames:{dt,rms:Array.from(rms),onsets:Array.from(novelty),chroma,timbre},maxRms};
 }
 function frameFeature(analysis,t){const i=clamp(Math.round(t/analysis.frames.dt),0,analysis.frames.rms.length-1);return {chroma:analysis.frames.chroma[i],timbre:analysis.frames.timbre[i],energy:analysis.frames.rms[i]};}
 function seamCost(a,from,to,lyrics=[]){
@@ -82,7 +82,7 @@ function makePlans(a,target,options={}){
  if(!Number.isFinite(target)||target<5||target>1200)throw new Error('目标时长请输入 5–1200 秒。');
  const start=a.activeStart,end=a.activeEnd,duration=end-start,bar=60/a.bpm*a.meter,lyrics=options.lyrics||[];
  const strict=options.exact!==false,candidates=[];
- function add(pieces,name,cost,kind){const natural=planDuration(pieces),ratio=target/natural;if(strict&&(ratio<.88||ratio>1.12))return;const seams=pieces.length-1;const retainedChorus=a.sections.filter(s=>/副歌/.test(s.label)).filter(s=>pieces.some(p=>p.end>=s.end&&p.start<=s.start)).length;const headShare=(pieces[0].end-pieces[0].start)/Math.max(1,natural);const structurePenalty=pieces.slice(0,-1).reduce((sum,p)=>sum+Math.min(1,Math.min(...a.sections.flatMap(s=>[Math.abs(s.start-p.end),Math.abs(s.end-p.end)]))/Math.max(1,bar))*.2,0);const score=cost+Math.abs(natural-target)/Math.max(1,target)*8+seams*.1-retainedChorus*.12+Math.abs(headShare-.4)*.45+structurePenalty;const signature=pieces.map(p=>[p.start.toFixed(2),p.end.toFixed(2)].join(':')).join('|');if(candidates.some(p=>p.signature===signature))return;candidates.push({id:'p'+candidates.length,name,kind,pieces,naturalDuration:natural,duration:strict?target:natural,stretch:strict?ratio:1,seams,cost:score,signature,retainedChorus,endingPreserved:true,lyricProtected:lyrics.length>0});}
+ function add(pieces,name,cost,kind){const natural=planDuration(pieces),ratio=target/natural;if(strict&&(ratio<.94||ratio>1.06))return;const seams=pieces.length-1;const retainedChorus=a.sections.filter(s=>/副歌/.test(s.label)).filter(s=>pieces.some(p=>p.end>=s.end&&p.start<=s.start)).length;const headShare=(pieces[0].end-pieces[0].start)/Math.max(1,natural);const structurePenalty=pieces.slice(0,-1).reduce((sum,p)=>sum+Math.min(1,Math.min(...a.sections.flatMap(s=>[Math.abs(s.start-p.end),Math.abs(s.end-p.end)]))/Math.max(1,bar))*.2,0);const score=cost+Math.abs(natural-target)/Math.max(1,target)*8+seams*.1-retainedChorus*.12+Math.abs(headShare-.4)*.45+structurePenalty;const signature=pieces.map(p=>[p.start.toFixed(2),p.end.toFixed(2)].join(':')).join('|');if(candidates.some(p=>p.signature===signature))return;candidates.push({id:'p'+candidates.length,name,kind,pieces,naturalDuration:natural,duration:strict?target:natural,stretch:strict?ratio:1,seams,cost:score,signature,retainedChorus,endingPreserved:true,lyricProtected:lyrics.length>0});}
  if(Math.abs(duration-target)<.03){add([{start,end,track:0}],'保留完整原曲',0,'original');return candidates;}
  const minHead=Math.min(bar, target*.22),minTail=Math.min(bar,target*.25),points=[...new Set([...a.bars,...a.sections.slice(1).map(s=>a.beats.reduce((best,b)=>Math.abs(b-s.start)<Math.abs(best-s.start)?b:best,a.beats[0]||s.start))])].filter(t=>t>start+minHead&&t<end-minTail).sort((x,y)=>x-y);
  if(target<duration){
@@ -98,7 +98,7 @@ function makePlans(a,target,options={}){
   if(!candidates.length){const from=start+Math.min(bar,duration*.15),to=end-Math.min(bar,duration*.15),loop=to-from,count=Math.max(1,Math.round(extra/loop));const pieces=[{start,end:to,track:0}];for(let k=0;k<count;k++)pieces.push({start:from,end:to,track:0});pieces.push({start:to,end,track:0});add(pieces,'循环乐段备选',3,'extend');}
  }
  candidates.sort((x,y)=>x.cost-y.cost);const selected=[];
- for(const p of candidates){if(selected.length>=4)break;if(selected.some(q=>q.pieces.length===p.pieces.length&&Math.abs(q.pieces[0].end-p.pieces[0].end)<bar*.7))continue;selected.push(p);}
+ for(const p of candidates){if(selected.length>=(options.limit||4))break;if(selected.some(q=>q.pieces.length===p.pieces.length&&Math.abs(q.pieces[0].end-p.pieces[0].end)<bar*.7))continue;selected.push(p);}
  for(let i=0;i<selected.length;i++){selected[i].id='plan-'+i;selected[i].label=i===0?'推荐试听':`备选 ${i}`;selected[i].risk=selected[i].cost>2.2?'接缝风险较高':selected[i].cost>1?'需要试听确认':'接缝特征较接近';}
  if(!selected.length)throw new Error('当前目标无法在保留起收的同时得到合理方案，请调整几秒后重试。');
  return selected;
@@ -108,6 +108,33 @@ function mixPlans(a,b,target,options={}){
  const start=a.activeStart,end=b.activeEnd,fade=clamp(options.crossfade||2,.05,8);
  for(const cutA of a.bars){if(cutA<start+4)continue;const desiredB=end-(target-(cutA-start))*bRate;for(const cutB of b.bars){if(Math.abs(cutB-desiredB)>60/b.bpm*4||cutB>end-4)continue;const fa=frameFeature(a,cutA),fb=frameFeature(b,cutB);const cost=1-similarity(fa.chroma,fb.chroma)+.5*(1-similarity(fa.timbre,fb.timbre))+.15*Math.abs(Math.log((fa.energy+.001)/(fb.energy+.001)));const pieces=[{start,end:cutA,track:0},{start:cutB,end,track:1,rate:bRate}],natural=planDuration(pieces),stretch=target/natural;if(options.exact!==false&&(stretch<.9||stretch>1.1))continue;candidates.push({id:'mix-'+candidates.length,name:'A → B · 节拍与响度衔接',kind:'mix',pieces,naturalDuration:natural,duration:options.exact===false?natural:target,stretch:options.exact===false?1:stretch,seams:1,cost:cost+Math.abs(target-natural)/target*10,endingPreserved:true,crossfade:fade,bRate,risk:'两首歌曲仍需试听核对调性和过渡'});}}
  candidates.sort((x,y)=>x.cost-y.cost);return candidates.filter((p,i,all)=>i===0||Math.abs(p.pieces[0].end-all[0].pieces[0].end)>60/a.bpm*2).slice(0,4).map((p,i)=>({...p,label:i?'备选 '+i:'推荐试听'}));
+}
+function boundaryCost(a,from,to){
+ const avg=times=>{const chroma=Array(12).fill(0),timbre=Array(18).fill(0);let energy=0;for(const t of times){const f=frameFeature(a,t);for(let i=0;i<12;i++)chroma[i]+=f.chroma[i];for(let i=0;i<18;i++)timbre[i]+=f.timbre[i];energy+=f.energy;}return {chroma:norm(chroma),timbre:norm(timbre),energy:energy/times.length};};
+ const before=avg([-.42,-.28,-.14].map(x=>from+x)),after=avg([.12,.26,.4].map(x=>to+x));
+ return (1-similarity(before.chroma,after.chroma))*1.6+(1-similarity(before.timbre,after.timbre))*.8+Math.min(2,Math.abs(Math.log((before.energy+.0001)/(after.energy+.0001))))*.3;
+}
+function grooveSimilarity(a,from,to){
+ const onset=a.frames.onsets;if(!onset)return 0;
+ const beat=60/a.bpm,dt=a.frames.dt;
+ const pattern=t=>Array.from({length:16},(_,i)=>{const f=clamp(Math.round((t+(i-4)*beat/4)/dt),0,onset.length-1);let peak=0;for(let j=Math.max(0,f-2);j<=Math.min(onset.length-1,f+2);j++)peak=Math.max(peak,onset[j]);return peak;});
+ return similarity(norm(pattern(from)),norm(pattern(to)));
+}
+function fadeRetention(source,rate,from,to,fade){
+ const n=Math.max(16,Math.round(fade*rate)),a=Math.round(from*rate)-n,b=Math.round(to*rate)-n;
+ if(a<0||b<0||a+n>=source.length||b+n>=source.length)return 1;
+ let mixed=0,expected=0;
+ for(let i=0;i<n;i+=4){const t=(i+1)/(n+1),x=source[a+i],y=source[b+i],v=x*(1-t)+y*t;mixed+=v*v;expected+=(x*x*(1-t)*(1-t)+y*y*t*t);}
+ return expected<1e-7?1:Math.sqrt(mixed/expected);
+}
+function assessPlans(a,plans,source,rate,options={}){
+ const natural=a.bars.filter(t=>t>a.activeStart+.6&&t<a.activeEnd-.6).map(t=>boundaryCost(a,t,t)).sort((x,y)=>x-y);
+ const reference=natural[Math.floor(natural.length*.85)]||.2,limit=Math.max(.34,reference*1.45+.08),fade=clamp(options.crossfade||.07,.005,.5);
+ return plans.map(plan=>{
+  const joins=[];for(let i=1;i<plan.pieces.length;i++){const from=plan.pieces[i-1].end,to=plan.pieces[i].start,change=boundaryCost(a,from,to),groove=grooveSimilarity(a,from,to),fadeLevel=fadeRetention(source,rate,from,to,fade);joins.push({from,to,change,groove,fadeLevel,passed:change<=limit&&groove>=.65&&fadeLevel>=.42});}
+  const passed=joins.every(j=>j.passed),penalty=joins.reduce((sum,j)=>sum+j.change/limit*.4+(1-j.groove)*.4+Math.max(0,1-j.fadeLevel)*.7,0);
+  return {...plan,quality:{passed,joins,limit,score:plan.cost+penalty},risk:passed?'接缝自动检查通过 · 仍建议试听':'接缝检查未通过'};
+ }).sort((x,y)=>x.quality.score-y.quality.score);
 }
 // Waveform-similarity overlap-add. All channels share alignment; pitch is preserved.
 function stretch(channels,sampleRate,targetFrames){
@@ -146,7 +173,7 @@ function render(sources,rate,plan,options={}){
 }
 function wav(channels,sampleRate,markers=[]){const frames=channels[0].length,n=channels.length,cueSize=markers.length?12+24*markers.length:0,buffer=new ArrayBuffer(44+frames*n*2+cueSize),v=new DataView(buffer);const text=(o,s)=>{for(let i=0;i<s.length;i++)v.setUint8(o+i,s.charCodeAt(i));};text(0,'RIFF');v.setUint32(4,buffer.byteLength-8,true);text(8,'WAVEfmt ');v.setUint32(16,16,true);v.setUint16(20,1,true);v.setUint16(22,n,true);v.setUint32(24,sampleRate,true);v.setUint32(28,sampleRate*n*2,true);v.setUint16(32,n*2,true);v.setUint16(34,16,true);text(36,'data');v.setUint32(40,frames*n*2,true);let offset=44;for(let i=0;i<frames;i++)for(let ch=0;ch<n;ch++){const s=clamp(channels[ch][i],-1,1);v.setInt16(offset,Math.round(s*(s<0?32768:32767)),true);offset+=2;}if(markers.length){text(offset,'cue ');v.setUint32(offset+4,4+markers.length*24,true);v.setUint32(offset+8,markers.length,true);offset+=12;markers.forEach((t,i)=>{v.setUint32(offset,i+1,true);v.setUint32(offset+4,Math.round(t*sampleRate),true);text(offset+8,'data');v.setUint32(offset+20,Math.round(t*sampleRate),true);offset+=24;});}return buffer;}
 function remapLyrics(lyrics,plan){const result=[];let offset=0;const natural=planDuration(plan.pieces),scale=plan.duration/natural;for(const p of plan.pieces){for(const line of lyrics){const start=Math.max(p.start,line.start),end=Math.min(p.end,line.end);if(end>start)result.push({start:(offset+(start-p.start)/(p.rate||1))*scale,end:(offset+(end-p.start)/(p.rate||1))*scale,text:line.text});}offset+=(p.end-p.start)/(p.rate||1);}return result;}
-const api={analyze,makePlans,mixPlans,render,stretch,wav,remapLyrics,planDuration,seamCost};
+const api={analyze,makePlans,mixPlans,assessPlans,render,stretch,wav,remapLyrics,planDuration,seamCost};
 if(typeof module!=='undefined'&&module.exports)module.exports=api;else root.WaveCutEngine=api;
 })(typeof self!=='undefined'?self:globalThis);
 
